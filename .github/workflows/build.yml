@@ -1,0 +1,119 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Image directory to build. Empty builds every image.
+        required: false
+        type: string
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.detect.outputs.images }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          chmod +x .github/scripts/detect-images.sh
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.image }}" ]; then
+              images=$(.github/scripts/detect-images.sh one "${{ inputs.image }}")
+            else
+              images=$(.github/scripts/detect-images.sh all)
+            fi
+          else
+            images=$(.github/scripts/detect-images.sh auto)
+          fi
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "selected $images"
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.images != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.detect.outputs.images) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        run: |
+          version=$(tr -d '[:space:]' < "${{ matrix.image }}/VERSION")
+          if ! [[ $version =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "invalid VERSION: $version" >&2
+            exit 1
+          fi
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${owner}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+          echo "release=${{ matrix.image }}-${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Public package
+        continue-on-error: true
+        run: |
+          encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${{ matrix.image }}', safe=''))")
+          gh api --method PUT \
+            -H "Accept: application/vnd.github+json" \
+            "/user/packages/container/${encoded}/visibility" \
+            -f visibility=public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.meta.outputs.release }}"
+          notes="$(cat <<EOF
+          ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+
+          digest: ${{ steps.build.outputs.digest }}
+          commit: ${{ github.sha }}
+          EOF
+          )"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release delete "$tag" --yes --cleanup-tag
+          fi
+          gh release create "$tag" \
+            --title "${{ matrix.image }} ${{ steps.meta.outputs.version }}" \
+            --notes "$notes"
