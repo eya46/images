@@ -8,3 +8,10 @@ RUN apt-get update \
        libgles2 \
        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+      pypinyin \
+      quart-cors \
+      boto3 \
+      botocore \
+      tqdm
