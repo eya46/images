@@ -5,11 +5,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     UV_PYTHON=3.13 \
     UV_PYTHON_INSTALL_DIR=/opt/uv/python \
-    UV_PYTHON_BIN_DIR=/usr/local/bin \
     UV_PYTHON_PREFERENCE=only-managed \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_SYSTEM_PYTHON=1
+    VIRTUAL_ENV=/opt/python \
+    PATH=/opt/python/bin:/usr/local/bin:$PATH
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /usr/local/bin/
 
@@ -24,11 +24,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
     && corepack prepare pnpm@9.7.1 --activate \
-    && uv python install --preview-features python-install-default 3.13 --default \
-    && uv pip install --system --python 3.13 pip aiohttp \
-    && printf '%s\n' '#!/bin/sh' 'exec python3 -m pip "$@"' > /usr/local/bin/pip \
-    && printf '%s\n' '#!/bin/sh' 'exec python3 -m pip "$@"' > /usr/local/bin/pip3 \
-    && chmod +x /usr/local/bin/pip /usr/local/bin/pip3 \
+    && uv python install 3.13 \
+    && uv venv --python 3.13 --seed "$VIRTUAL_ENV" \
+    && uv pip install --python "$VIRTUAL_ENV/bin/python" aiohttp \
     && python3 -c "import aiohttp, sys; assert sys.version_info[:2] == (3, 13), sys.version" \
     && pip3 --version
 
