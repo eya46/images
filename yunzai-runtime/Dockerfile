@@ -8,7 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_PYTHON_BIN_DIR=/usr/local/bin \
     UV_PYTHON_PREFERENCE=only-managed \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_SYSTEM_PYTHON=1
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /usr/local/bin/
 
@@ -23,15 +24,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
     && corepack prepare pnpm@9.7.1 --activate \
-    && uv python install 3.13 --default \
-    && uv pip install --python 3.13 pip aiohttp \
-    && pybin="$(dirname "$(uv python find 3.13)")" \
-    && ln -sfn "$(uv python find 3.13)" /usr/local/bin/python \
-    && ln -sfn "$(uv python find 3.13)" /usr/local/bin/python3 \
-    && ln -sfn "$(uv python find 3.13)" /usr/local/bin/python3.13 \
-    && ln -sfn "$pybin/pip" /usr/local/bin/pip \
-    && ln -sfn "$pybin/pip3" /usr/local/bin/pip3 \
-    && python3 -c "import aiohttp, sys; assert sys.version_info[:2] == (3, 13), sys.version"
+    && uv python install --preview-features python-install-default 3.13 --default \
+    && uv pip install --system --python 3.13 pip aiohttp \
+    && printf '%s\n' '#!/bin/sh' 'exec python3 -m pip "$@"' > /usr/local/bin/pip \
+    && printf '%s\n' '#!/bin/sh' 'exec python3 -m pip "$@"' > /usr/local/bin/pip3 \
+    && chmod +x /usr/local/bin/pip /usr/local/bin/pip3 \
+    && python3 -c "import aiohttp, sys; assert sys.version_info[:2] == (3, 13), sys.version" \
+    && pip3 --version
 
 WORKDIR /app
 ENTRYPOINT ["/usr/bin/tini", "--"]
