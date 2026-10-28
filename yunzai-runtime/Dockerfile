@@ -1,4 +1,4 @@
-FROM node:22.6.0-bookworm
+FROM node:22.23.4-bookworm@sha256:78bc820a7a6148e8c48731eca18dbb9b6b2c05ac4a52138479be565f2831682d
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_SKIP_DOWNLOAD=true \

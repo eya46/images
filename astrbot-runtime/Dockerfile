@@ -1,4 +1,4 @@
-FROM soulter/astrbot@sha256:5d23f264ba9cb9b03a2bc1ef87f1ac87c03932aa99459b497afacb6a7c38aa8e
+FROM soulter/astrbot:v4.29.3@sha256:c93a6d19507ba45474c3dfb82aad9d36eb432a478112f13c7e6325b5ebffc5f2
 
 USER root
 RUN apt-get update \
